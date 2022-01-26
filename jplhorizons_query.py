@@ -145,12 +145,13 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
     if status == 200:
         #
         # If the ephemeris data file was generated, write it to the output file:
-        if "result" in data and savetofile:
-            with open(ephem_filename, "w") as f:
-                f.write(data["result"])
-        # Otherwise, the SPK file was not generated so output an error
-        else:
-            casalog.post("ERROR: ephem file not generated", 'WARN')
+        if savetofile:
+            if "result" in data:
+                with open(ephem_filename, "w") as f:
+                    f.write(data["result"])
+            # Otherwise, the ephemeris file was not generated so output an error
+            else:
+                casalog.post("ERROR: No data found. Ephemeris data file not generated", 'WARN')
     else:
         raise Exception('Could not retrieve the data. Error code:{}:{}'.format(status, response.msg))
 
@@ -219,7 +220,8 @@ def tocasatb(indata, outtable):
     # read the original query result dictionary containing ephemeris data and save the data part
     # to a temporary text file. Then re-read the temporary file to a casa table
     # with the approriate data format that setjy and measure expect.
-
+    tempfname = 'temp_ephem_'+str(os.getpid())+'.dat'
+    tempconvfname = 'temp_ephem_conv_'+str(os.getpid())+'.dat'
     # Scan the original data 
     if type(indata) == dict and 'result' in indata:
         print("ephem data dict")
@@ -231,8 +233,7 @@ def tocasatb(indata, outtable):
                 # the relevant information in the main header section is extracted as
     # it is read line by line. The ephemeris data is stored in the separate text file
     # to be further processed in subsequent steps.
-    # with open(textfile, 'r') as infile, open('temp_ephem.dat', 'w') as outfile:
-    with open('temp_ephem.dat', 'w') as outfile:
+    with open(tempfname, 'w') as outfile:
         # Some initialization
         headerdict = {}
         # jplhorizonsdataIdFound = False
@@ -421,7 +422,7 @@ def tocasatb(indata, outtable):
         if foundncols == len(cols):
             # Format the data to comply with measure/setjy
             print("Found all the required columns")
-            with open('temp_conv_ephem.dat', 'w') as outf, open('temp_ephem.dat', 'r') as inf:
+            with open(tempconvfname, 'w') as outf, open(tempfname, 'r') as inf:
                 ndata = 0
                 earliestmjd = None
                 mjd = None
@@ -477,7 +478,7 @@ def tocasatb(indata, outtable):
 
         # final step: convert to a CASA table
         dtypes = np.array(['D' for _ in range(len(cols))])
-        _tb.fromascii(outtable, 'temp_conv_ephem.dat', sep=' ', columnnames=list(cols.keys()),
+        _tb.fromascii(outtable, tempconvfname, sep=' ', columnnames=list(cols.keys()),
                       datatypes=dtypes.tolist())
 
         # fill keyword values in the ephem table
@@ -487,8 +488,8 @@ def tocasatb(indata, outtable):
         else:
             raise Exception("Error occured. The output table, " + outtable + "is not generated")
 
-        # copied from JPLephem_reader, can this be replaced with the code in solar_s
-
+        tempfiles = [tempfname, tempconvfname]
+        _clean_up(tempfiles)
 
 # This needs to change to read the ephem data from the generated casa table.
 # Will be called in fill_keywords_from_dict()
@@ -577,3 +578,12 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
         _tb.done()
     except RuntimeError:
         print('Cannot add the data in keywords')
+
+def _clean_up(filelist):
+    """
+    Clean up the temporary files 
+    """
+    for f in filelist:
+        if os.path.exists(f): 
+            os.remove(f) 
+            #print("Deleting ", f)
