@@ -172,11 +172,14 @@ def tocasatb(indata, outtable):
     # These are required columns for SetJy
     cols = {
         'MJD': {'header': 'Date__\(UT\)',
-                'comment': 'date in MJD'},
+                'comment': 'date in MJD',
+                'unit': 'd'},
         'RA': {'header': 'R.A.',
-               'comment': 'astrometric Right Ascension (ICRF/J2000)'},
+               'comment': 'astrometric Right Ascension (ICRF/J2000)',
+               'unit': 'deg'},
         'DEC': {'header': 'DEC',
-                'comment': 'astrometric Declination (ICRF/J2000)'},
+                'comment': 'astrometric Declination (ICRF/J2000)',
+                'unit': 'deg'},
         'Rho': {'header': 'delta',
                 'comment': 'geocentric distance',
                 'unit': 'AU'},
@@ -376,8 +379,12 @@ def tocasatb(indata, outtable):
     # check the input data columns and stored the order as indices
     foundncols = 0
     indexoffset = 0
+    colkeys = {}
     if incolnames is not None:
         for outcolname in cols:
+            # all colnames in cols should have unit defined.
+            if 'unit' in cols[outcolname]:
+                colkeys[outcolname] = np.array([cols[outcolname]['unit']])
             inheadername = cols[outcolname]['header']
             # expect date is in the first column (date and mm:hh seperated by spaces)
             if outcolname == 'MJD':
@@ -393,6 +400,7 @@ def tocasatb(indata, outtable):
                     if re.search(inheadername + '.+(ICRF).+', incol):
                         cols[outcolname]['index'] = incolnames.index(incol) + indexoffset
                         foundncols += 1
+                        
                 if 'index' not in cols[outcolname]:
                     print("Cannot find the astrometric RA and Dec column")
             elif outcolname == 'DEC':
@@ -474,7 +482,7 @@ def tocasatb(indata, outtable):
 
         # fill keyword values in the ephem table
         if os.path.exists(outtable):
-            _fill_keywords_from_dict(headerdict, outtable)
+            _fill_keywords_from_dict(headerdict, colkeys, outtable)
             print("Output is written to a CASA table, {}".format(outtable))
         else:
             raise Exception("Error occured. The output table, " + outtable + "is not generated")
@@ -546,7 +554,7 @@ def _mean_radius_with_known_theta(disklat, radii):
     return (Rmean / (index + 1.0)) / 1000.0
 
 
-def _fill_keywords_from_dict(keydict, tablename):
+def _fill_keywords_from_dict(keydict, colkeys, tablename):
     # open tb
     # get ra,dec,np_ra, np_dec, and radii in the keyword
     # call mod version of mean_radius_with_known_theta
@@ -561,6 +569,10 @@ def _fill_keywords_from_dict(keydict, tablename):
         if 'rot_per' in keydict and 'orb_per' in keydict and keydict['rot_per'] == 'Synchronous':
             keydict['rot_per'] = keydict['orb_per']
         _tb.putkeywords(keydict)
+        datacolnames = _tb.colnames()
+        for col in datacolnames:
+            if col in colkeys:
+                _tb.putcolkeyword(col, 'QuantumUnits', colkeys[col])
         _tb.flush()
         _tb.done()
     except RuntimeError:
