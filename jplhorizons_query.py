@@ -139,9 +139,10 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
         casalog.post(msg, 'WARN')
 
     status = response.getcode()
-
-    data = ast.literal_eval(datastr)
-
+    try:
+        data = ast.literal_eval(datastr)
+    except RuntimeError as e:
+        casalog.post(e, 'SEVERE')
     if status == 200:
         #
         # If the ephemeris data file was generated, write it to the output file:
@@ -398,7 +399,9 @@ def tocasatb(indata, outtable):
             elif outcolname == 'DEC':
                 if 'index' in cols['RA']:
                     # Dec data col is next to RA data col
-                    cols[outcolname]['index'] = cols['RA']['index'] + indexoffset + 1
+                    cols[outcolname]['index'] = cols['RA']['index'] + 1
+                    # add additional offset for index (4 data columns at this point)
+                    indexoffset +=1
                     foundncols += 1
             else:
                 if inheadername in incolnames:
