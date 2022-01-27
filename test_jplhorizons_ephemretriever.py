@@ -1,5 +1,7 @@
 # script to test jplhorizons_query.py
 from casatools import quanta
+import sys
+sys.path.append('.')
 import jplhorizons_query
 
 objn = 'MARS'
@@ -12,4 +14,4 @@ step = '1d'
 startmjd = int(_qa.totime(starttime)['value'])
 endmjd = int(_qa.totime(stoptime)['value'])
 outtable = objn.capitalize()+'_'+str(startmjd)+'-'+str(endmjd)+'dUTC_new.tab'
-jplhorizons_query.getjplephem(objn, starttime, stoptime, step, outtable)
+jplhorizons_query.getjplephem(objn, starttime, stoptime, step, outtable, savetofile=True)

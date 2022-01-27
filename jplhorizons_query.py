@@ -125,7 +125,7 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
     req = Request(urlbase, params)
     datastr = None
     try:
-        with urlopen(req, context=context, timeout=60) as response:
+        with urlopen(req, context=context, timeout=10) as response:
             datastr = response.read().decode()
     except URLError as e:
         if hasattr(e, 'reason'):
@@ -446,8 +446,10 @@ def tocasatb(indata, outtable):
                     delta = tempdata[cols['Rho']['index']]
                     outline += delta + sep
                     # geocentric range rate (RadVel)
-                    deldot = tempdata[cols['RadVel']['index']]
-                    outline += deldot + sep
+                    valinkmps = tempdata[cols['RadVel']['index']]
+                    deldot = _qa.convert(_qa.quantity(valinkmps+'km/s'), 'AU/d' )['value']
+                    print("valinkms={}, delot={}".format(valinkmps, deldot))
+                    outline += str(deldot) + sep
                     # NP_ang & NP_dist
                     npang = tempdata[cols['NP_ang']['index']]
                     npdist = tempdata[cols['NP_dist']['index']]
