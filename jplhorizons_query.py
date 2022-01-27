@@ -146,12 +146,13 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
     if status == 200:
         #
         # If the ephemeris data file was generated, write it to the output file:
-        if "result" in data and savetofile:
-            with open(ephem_filename, "w") as f:
-                f.write(data["result"])
-        # Otherwise, the SPK file was not generated so output an error
-        else:
-            casalog.post("ERROR: ephem file not generated", 'WARN')
+        if savetofile:
+            if "result" in data:
+                with open(ephem_filename, "w") as f:
+                    f.write(data["result"])
+            # Otherwise, the ephemeris file was not generated so output an error
+            else:
+                casalog.post("ERROR: No data found. Ephemeris data file not generated", 'WARN')
     else:
         raise Exception('Could not retrieve the data. Error code:{}:{}'.format(status, response.msg))
 
@@ -173,11 +174,14 @@ def tocasatb(indata, outtable):
     # These are required columns for SetJy
     cols = {
         'MJD': {'header': 'Date__\(UT\)',
-                'comment': 'date in MJD'},
+                'comment': 'date in MJD',
+                'unit': 'd'},
         'RA': {'header': 'R.A.',
-               'comment': 'astrometric Right Ascension (ICRF/J2000)'},
+               'comment': 'astrometric Right Ascension (ICRF/J2000)',
+               'unit': 'deg'},
         'DEC': {'header': 'DEC',
-                'comment': 'astrometric Declination (ICRF/J2000)'},
+                'comment': 'astrometric Declination (ICRF/J2000)',
+                'unit': 'deg'},
         'Rho': {'header': 'delta',
                 'comment': 'geocentric distance',
                 'unit': 'AU'},
@@ -217,7 +221,8 @@ def tocasatb(indata, outtable):
     # read the original query result dictionary containing ephemeris data and save the data part
     # to a temporary text file. Then re-read the temporary file to a casa table
     # with the approriate data format that setjy and measure expect.
-
+    tempfname = 'temp_ephem_'+str(os.getpid())+'.dat'
+    tempconvfname = 'temp_ephem_conv_'+str(os.getpid())+'.dat'
     # Scan the original data 
     if type(indata) == dict and 'result' in indata:
         print("ephem data dict")
@@ -229,8 +234,7 @@ def tocasatb(indata, outtable):
                 # the relevant information in the main header section is extracted as
     # it is read line by line. The ephemeris data is stored in the separate text file
     # to be further processed in subsequent steps.
-    # with open(textfile, 'r') as infile, open('temp_ephem.dat', 'w') as outfile:
-    with open('temp_ephem.dat', 'w') as outfile:
+    with open(tempfname, 'w') as outfile:
         # Some initialization
         headerdict = {}
         # jplhorizonsdataIdFound = False
@@ -377,8 +381,12 @@ def tocasatb(indata, outtable):
     # check the input data columns and stored the order as indices
     foundncols = 0
     indexoffset = 0
+    colkeys = {}
     if incolnames is not None:
         for outcolname in cols:
+            # all colnames in cols should have unit defined.
+            if 'unit' in cols[outcolname]:
+                colkeys[outcolname] = np.array([cols[outcolname]['unit']])
             inheadername = cols[outcolname]['header']
             # expect date is in the first column (date and mm:hh seperated by spaces)
             if outcolname == 'MJD':
@@ -394,6 +402,7 @@ def tocasatb(indata, outtable):
                     if re.search(inheadername + '.+(ICRF).+', incol):
                         cols[outcolname]['index'] = incolnames.index(incol) + indexoffset
                         foundncols += 1
+                        
                 if 'index' not in cols[outcolname]:
                     print("Cannot find the astrometric RA and Dec column")
             elif outcolname == 'DEC':
@@ -416,7 +425,7 @@ def tocasatb(indata, outtable):
         if foundncols == len(cols):
             # Format the data to comply with measure/setjy
             print("Found all the required columns")
-            with open('temp_conv_ephem.dat', 'w') as outf, open('temp_ephem.dat', 'r') as inf:
+            with open(tempconvfname, 'w') as outf, open(tempfname, 'r') as inf:
                 ndata = 0
                 earliestmjd = None
                 mjd = None
@@ -472,18 +481,18 @@ def tocasatb(indata, outtable):
 
         # final step: convert to a CASA table
         dtypes = np.array(['D' for _ in range(len(cols))])
-        _tb.fromascii(outtable, 'temp_conv_ephem.dat', sep=' ', columnnames=list(cols.keys()),
+        _tb.fromascii(outtable, tempconvfname, sep=' ', columnnames=list(cols.keys()),
                       datatypes=dtypes.tolist())
 
         # fill keyword values in the ephem table
         if os.path.exists(outtable):
-            _fill_keywords_from_dict(headerdict, outtable)
+            _fill_keywords_from_dict(headerdict, colkeys, outtable)
             print("Output is written to a CASA table, {}".format(outtable))
         else:
             raise Exception("Error occured. The output table, " + outtable + "is not generated")
 
-        # copied from JPLephem_reader, can this be replaced with the code in solar_s
-
+        tempfiles = [tempfname, tempconvfname]
+        _clean_up(tempfiles)
 
 # This needs to change to read the ephem data from the generated casa table.
 # Will be called in fill_keywords_from_dict()
@@ -549,7 +558,7 @@ def _mean_radius_with_known_theta(disklat, radii):
     return (Rmean / (index + 1.0)) / 1000.0
 
 
-def _fill_keywords_from_dict(keydict, tablename):
+def _fill_keywords_from_dict(keydict, colkeys, tablename):
     # open tb
     # get ra,dec,np_ra, np_dec, and radii in the keyword
     # call mod version of mean_radius_with_known_theta
@@ -564,7 +573,20 @@ def _fill_keywords_from_dict(keydict, tablename):
         if 'rot_per' in keydict and 'orb_per' in keydict and keydict['rot_per'] == 'Synchronous':
             keydict['rot_per'] = keydict['orb_per']
         _tb.putkeywords(keydict)
+        datacolnames = _tb.colnames()
+        for col in datacolnames:
+            if col in colkeys:
+                _tb.putcolkeyword(col, 'QuantumUnits', colkeys[col])
         _tb.flush()
         _tb.done()
     except RuntimeError:
         print('Cannot add the data in keywords')
+
+def _clean_up(filelist):
+    """
+    Clean up the temporary files 
+    """
+    for f in filelist:
+        if os.path.exists(f): 
+            os.remove(f) 
+            #print("Deleting ", f)
