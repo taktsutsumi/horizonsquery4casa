@@ -1,6 +1,6 @@
 import numpy as np
 from casatools import table
-objectname='Mars'
+objectname='Callisto'
 mjdstr='59214-62866dUTC'
 #ephemdir='/home/casa/data/trunk/ephemerides/JPL-Horizons/'
 ephemdir='/Users/ttsutsum/SWDevel/casa-data/ephemerides/JPL-Horizons/'

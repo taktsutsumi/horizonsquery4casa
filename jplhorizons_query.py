@@ -2,14 +2,15 @@
 # convert it to CASA readable format (i.e. CASA table )
 import numpy as np
 import os
+import time
 from math import sqrt, sin, cos, log
 
-from casatools import table, quanta
+from casatools import table, quanta, measures
 from casatasks import casalog
 
 _tb = table()
 _qa = quanta()
-
+_me = measures()
 
 def getjplephem(objectname, starttime, stoptime, incr, outtable, asis=False, savetofile=False):
     """
@@ -56,7 +57,7 @@ def getjplephem(objectname, starttime, stoptime, incr, outtable, asis=False, sav
     if not asis:
         if not objectname.lower() in known_objects:
             raise Exception(
-                "{} is not in the known object list for CASA. To skip this check set asis=True".format(objectname))
+                "%s is not in the known object list for CASA. To skip this check set asis=True" % objectname)
         else:
             target = known_objects[objectname.lower()]
     else:
@@ -147,6 +148,8 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
         #
         # If the ephemeris data file was generated, write it to the output file:
         if savetofile:
+            if os.path.exists(ephem_filename):
+                os.remove(ephem_filename)
             if "result" in data:
                 with open(ephem_filename, "w") as f:
                     f.write(data["result"])
@@ -187,7 +190,7 @@ def tocasatb(indata, outtable):
                 'unit': 'AU'},
         'RadVel': {'header': 'deldot',
                    'comment': 'geocentric distance rate',
-                   'unit': 'km/s'},
+                   'unit': 'AU/d'},
         'NP_ang': {'header': 'NP.ang',
                    'comment': 'North-Pole pos. angle',
                    'unit': 'deg'},
@@ -253,9 +256,11 @@ def tocasatb(indata, outtable):
                 # jplhorizondataIdFound = True
                 print("Looks like JPL-Horizons data")
             elif re.search(r'^\s*Ephemeris\s+', line):  # date the data file was retrieved and  created
-                (_, _, _, wday, mon, day, time, year, _) = line.split(" ", 8)
-                headerdict['VS_CREATE'] = year + '/' + mon + '/' + day + '/' + time[0:5]
+                (_, _, _, wday, mon, day, tm, year, _) = line.split(" ", 8)
+                headerdict['VS_CREATE'] = year + '/' + mon + '/' + day + '/' + tm[0:5]
                 # VS_DATE - use the current time to indicate the time CASA table is created
+                #print(time.strftime('%Y/%m/%d/%H:%M', time.gmtime())
+                headerdict['VS_DATE'] = time.strftime('%Y/%m/%d/%H:%M',time.gmtime() )
                 headerdict['VS_TYPE'] = 'Table of comet/planetary positions'
                 # VERSION stored in the output table may be incremented in future
                 # for now fixed but it is incremented from 0003 to 0004 to indiate
@@ -321,7 +326,7 @@ def tocasatb(indata, outtable):
             elif re.search(r'rot. period|Rotational period', line):
                 m = re.search(r'rot. period\s+\w*=\s+([0-9.]+)\s+(\w+)|'
                               'rot. period\s+\S+=\s+[0-9.]+h\s[0-9.]+m\s[0-9.]+\ss|'
-                              'Rotational period\s+=\s+Synchronous', line)
+                              'Rotational period\s*=\s+Synchronous', line)
                 if m:
                     if m[0].find('Synchronous') != -1:
                         headerdict['rot_per'] = 'Synchronous'
@@ -337,21 +342,22 @@ def tocasatb(indata, outtable):
                     headerdict['rot_per'] = {'unit': 'h', 'value': float(m[1])}
             elif re.search(r'orbit period|orb per|orb. per.|orbital period', line.lower()) \
                     and not foundorbper:
-                m = re.search(r'Orbital period\s*=\s*([-0-9.]+)\s*(\w+)\s*|'
+                print("Found orbital period!!!")
+                m = re.search(r'Orbital period\s*[=~]\s*([-0-9.]+)\s*(\w+)\s*|'
                               'orb. per., (\w)\s+=\s+([0-9.]+)\s+|'
                               'orb per\s+=\s+([0-9.]+)\s+(\w+)\s+|'
                               'orbit period\s+=\s+([0-9.]+)\s+(\w+)\s+', line)
                 if m:
                     print('Found orb per ===r', m[0])
                     print('m.groups ', m.groups())
-                    if m[0].find('Orbital perid') != -1:
-                        headerdict['orb_per'] = {'unit': m[2], 'vlaue': m[1]}
+                    if m[0].find('Orbital period') != -1:
+                        headerdict['orb_per'] = {'unit': m[2], 'value': float(m[1])}
                     elif m[0].find('orb. per.') != -1:
-                        headerdict['orb_per'] = {'unit': m[3], 'value': m[4]}
+                        headerdict['orb_per'] = {'unit': m[3], 'value': float(m[4])}
                     elif m[0].find('orb per') != -1:
-                        headerdict['orb_per'] = {'unit': m[6], 'value': m[5]}
+                        headerdict['orb_per'] = {'unit': m[6], 'value': float(m[5])}
                     elif m[0].find('orbit period') != -1:
-                        headerdict['orb_per'] = {'unit': m[8], 'value': m[7]}
+                        headerdict['orb_per'] = {'unit': m[8], 'value': float(m[7])}
                     if 'orb_per' in headerdict:
                         foundorbper = True
             # start reading data
@@ -433,7 +439,7 @@ def tocasatb(indata, outtable):
                     outline = ''
                     sep = ' '
                     rawtempdata = line.split()
-                    tempdata = [-999.0 if x == 'n.a.' else x for x in rawtempdata]
+                    tempdata = ['-999.0' if x == 'n.a.' else x for x in rawtempdata]
                     # construct mjd from col 1 (calendar date) + col 2 (time)
                     caldatestr = tempdata[0] + ' ' + tempdata[1]
                     mjd = _qa.totime(caldatestr)
@@ -448,7 +454,7 @@ def tocasatb(indata, outtable):
                     # geocentric range rate (RadVel)
                     valinkmps = tempdata[cols['RadVel']['index']]
                     deldot = _qa.convert(_qa.quantity(valinkmps+'km/s'), 'AU/d' )['value']
-                    print("valinkms={}, delot={}".format(valinkmps, deldot))
+                    #print("valinkms={}, delot={}".format(valinkmps, deldot))
                     outline += str(deldot) + sep
                     # NP_ang & NP_dist
                     npang = tempdata[cols['NP_ang']['index']]
@@ -475,8 +481,8 @@ def tocasatb(indata, outtable):
                     if ndata == 1:
                         earliestmjd = mjd
                 # record first and last mjd in the data  
-                headerdict['earliest'] = earliestmjd
-                headerdict['latest'] = mjd
+                headerdict['earliest'] = _me.epoch('UTC',earliestmjd)
+                headerdict['latest'] = _me.epoch('UTC', mjd)
 
         else:
             print("Missing ", len(cols) - foundncols)
@@ -564,6 +570,10 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
     # open tb
     # get ra,dec,np_ra, np_dec, and radii in the keyword
     # call mod version of mean_radius_with_known_theta
+    orderedmainkeys = ['VS_CREATE','VS_DATE','VS_TYPE','VS_VERSION','NAME',\
+                       'MJD0','dMJD','GeoDist','GeoLat','GeoLong','obsloc',\
+                       'earliest','latest','radii',\
+                       'meanrad','orb_per','rot_per']
     try:
         _tb.open(tablename, nomodify=False)
         disklat = _tb.getcol('DiskLat')
@@ -574,7 +584,11 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
                 keydict['meanrad']['value'] = calc_meanrad
         if 'rot_per' in keydict and 'orb_per' in keydict and keydict['rot_per'] == 'Synchronous':
             keydict['rot_per'] = keydict['orb_per']
-        _tb.putkeywords(keydict)
+        sortedkeydict = {k: keydict[k] for k in orderedmainkeys}
+        print('sorteddict=',sortedkeydict)
+        for k in sortedkeydict:
+            _tb.putkeyword(k, sortedkeydict[k])
+        #_tb.putkeywords(sortedkeydict)
         datacolnames = _tb.colnames()
         for col in datacolnames:
             if col in colkeys:
@@ -591,4 +605,4 @@ def _clean_up(filelist):
     for f in filelist:
         if os.path.exists(f): 
             os.remove(f) 
-            #print("Deleting ", f)
+            print("Deleting ", f)
