@@ -226,279 +226,288 @@ def tocasatb(indata, outtable):
     # with the approriate data format that setjy and measure expect.
     tempfname = 'temp_ephem_'+str(os.getpid())+'.dat'
     tempconvfname = 'temp_ephem_conv_'+str(os.getpid())+'.dat'
-    # Scan the original data 
-    if type(indata) == dict and 'result' in indata:
-        print("ephem data dict")
-        ephemdata = indata['result']
-    elif type(indata) == str:
-        if os.path.exists(indata):
-            with open(indata, 'r') as infile:
-                ephemdata = infile.readlines()
-                # the relevant information in the main header section is extracted as
-    # it is read line by line. The ephemeris data is stored in the separate text file
-    # to be further processed in subsequent steps.
-    with open(tempfname, 'w') as outfile:
-        # Some initialization
-        headerdict = {}
-        # jplhorizonsdataIdFound = False
-        datalines = 0
-        readthedata = False
-        startmjd = None
-        incolnames = None
-        # multiple entries (in different units) may exit for orb. per.
-        foundorbper = False
-        ###
-        lcnt = 0
-        # for lnum, line in enumerate(infile):
-        for lnum, line in enumerate(ephemdata.split('\n')):
-            # JPL-Horizons data should contains this line at the beginning
-            if re.search(r'JPL/HORIZONS', line):
-                # jplhorizondataIdFound = True
-                print("Looks like JPL-Horizons data")
-            elif re.search(r'^\s*Ephemeris\s+', line):  # date the data file was retrieved and  created
-                (_, _, _, wday, mon, day, tm, year, _) = line.split(" ", 8)
-                headerdict['VS_CREATE'] = year + '/' + mon + '/' + day + '/' + tm[0:5]
-                # VS_DATE - use the current time to indicate the time CASA table is created
-                #print(time.strftime('%Y/%m/%d/%H:%M', time.gmtime())
-                headerdict['VS_DATE'] = time.strftime('%Y/%m/%d/%H:%M',time.gmtime() )
-                headerdict['VS_TYPE'] = 'Table of comet/planetary positions'
-                # VERSION stored in the output table may be incremented in future
-                # for now fixed but it is incremented from 0003 to 0004 to indiate
-                # this new code is used to convert the jpl horizons data to a table.
-                headerdict['VS_VERSION'] = '0004.000'
-                # target object name
-            elif re.match(r'^[>\s]*Target body name', line):
-                m = re.match(r'^[>\s]*Target body name:\s+\d*\s*(\w+)', line)
-                if m:
-                    headerdict['NAME'] = m[1]
-            # start time (of the requested time range) 
-            elif re.search(r'Start time', line):
-                m = re.match(r'^[>\s]*Start time\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\w+)', line)
-                if m:
-                    startmjd = _qa.totime(m[1] + '/' + m[2])
-            # end time (of the requested time range)
-            elif re.search(r'End time', line):
-                m = re.match(r'^[>\s]*End time\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\w+)', line)
-                if m:
-                    endmjd = _qa.totime(m[1] + '/' + m[2])
-            # date increment
-            elif re.search(r'Step-size', line):
-                m = re.match(r'^[>\s]*Step-size\s+\S+\s+(\S+)\s+(\w+)', line)
-                if m:
-                    unit = m[2]
-                    if unit == 'minutes':
-                        # this is the default unit returned by the JPL-Horizons
-                        theunit = 'min'
-                    elif unit == 'hours':
-                        theunit = 'h'
-                    elif unit == 'days':
-                        theunit = 'd'
-                    else:
-                        raise Exception('Unit of Step-size, %s is unrecognized' % unit)
-                    if theunit == 'd':
-                        dmjd = m[1]
-                    else:
-                        dmjd = _qa.convert(_qa.totime(m[1] + theunit), 'd')
-                    headerdict['dMJD'] = dmjd['value']
-                    if startmjd is not None:  # start mjd should be available before step-size line
-                        # MJD0 = firstMJD - dMJD (as defined casacore MeasComet documentation)
-                        headerdict['MJD0'] = startmjd['value'] - dmjd['value']
-            elif re.search(r'Center geodetic', line):
-                m = re.match(r'^[>\s]*Center geodetic\s*: ([-+0-9.]+,\s*[-+0-9.]+,\s*[-+0-9.]+)', line)
-                if m:
-                    long_lat_alt = m[1].split(',')
-                    headerdict['GeoLong'] = float(long_lat_alt[0])
-                    headerdict['GeoLat'] = float(long_lat_alt[1])
-                    headerdict['GeoDist'] = float(long_lat_alt[2])
-                    # obs location
-            elif re.search(r'Center-site name', line):
-                m = re.match(r'^[>\s]*Center-site name:\s+(\w+)', line)
-                if m:
-                    headerdict['obsloc'] = m[1]
-                    headerdict['posrefsys'] = 'ICRF/J2000.0'  # fixed
-            # target radii
-            elif re.search(r'Target radii', line):
-                m = re.match(r'^[>\s]*Target radii\s*:\s*([0-9.]+\s*x\s*[0-9.]+\s*x\s*[0-9.]+)\s*km.*', line)
-                if m:
-                    radiiarr = np.asarray(np.array(m[1].split(' x ')), dtype=np.float64)
-                    headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
-                    # rotational period (few pattens seem to exist)
-            elif re.search(r'rot. period|Rotational period', line):
-                m = re.search(r'rot. period\s+\w*=\s+([0-9.]+)\s+(\w+)|'
-                              'rot. period\s+\S+=\s+[0-9.]+h\s[0-9.]+m\s[0-9.]+\ss|'
-                              'Rotational period\s*=\s+Synchronous', line)
-                if m:
-                    if m[0].find('Synchronous') != -1:
-                        headerdict['rot_per'] = 'Synchronous'
-                    else:
-                        if len(m.groups()) > 1:
-                            headerdict['rot_per'] = {'unit': m[2], 'value': m[1]}
+    try:
+        # Scan the original data
+        if type(indata) == dict and 'result' in indata:
+            print("ephem data dict")
+            ephemdata = indata['result']
+        elif type(indata) == str:
+            if os.path.exists(indata):
+                with open(indata, 'r') as infile:
+                    ephemdata = infile.readlines()
+                    # the relevant information in the main header section is extracted as
+        # it is read line by line. The ephemeris data is stored in the separate text file
+        # to be further processed in subsequent steps.
+        with open(tempfname, 'w') as outfile:
+            # Some initialization
+            headerdict = {}
+            # jplhorizonsdataIdFound = False
+            datalines = 0
+            readthedata = False
+            startmjd = None
+            incolnames = None
+            # multiple entries (in different units) may exit for orb. per.
+            foundorbper = False
+            ###
+            lcnt = 0
+            # for lnum, line in enumerate(infile):
+            for lnum, line in enumerate(ephemdata.split('\n')):
+                # JPL-Horizons data should contains this line at the beginning
+                if re.search(r'JPL/HORIZONS', line):
+                    # jplhorizondataIdFound = True
+                    print("Looks like JPL-Horizons data")
+                elif re.search(r'^\s*Ephemeris\s+', line):  # date the data file was retrieved and  created
+                    (_, _, _, wday, mon, day, tm, year, _) = line.split(" ", 8)
+                    try:
+                        tst=float(mon)
+                        nmon = mon
+                    except:
+                        tonummon=time.strptime(mon,"%b")
+                        nmon = f"{tonummon.tm_mon:02d}"
+                    headerdict['VS_CREATE'] = year + '/' + nmon + '/' + day + '/' + tm[0:5]
+                    # VS_DATE - use the current time to indicate the time CASA table is created
+                    #print(time.strftime('%Y/%m/%d/%H:%M', time.gmtime())
+                    headerdict['VS_DATE'] = time.strftime('%Y/%m/%d/%H:%M',time.gmtime() )
+                    headerdict['VS_TYPE'] = 'Table of comet/planetary positions'
+                    # VERSION stored in the output table may be incremented in future
+                    # for now fixed but it is incremented from 0003 to 0004 to indiate
+                    # this new code is used to convert the jpl horizons data to a table.
+                    headerdict['VS_VERSION'] = '0004.000'
+                    # target object name
+                elif re.match(r'^[>\s]*Target body name', line):
+                    m = re.match(r'^[>\s]*Target body name:\s+\d*\s*(\w+)', line)
+                    if m:
+                        headerdict['NAME'] = m[1]
+                # start time (of the requested time range)
+                elif re.search(r'Start time', line):
+                    m = re.match(r'^[>\s]*Start time\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\w+)', line)
+                    if m:
+                        startmjd = _qa.totime(m[1] + '/' + m[2])
+                # end time (of the requested time range)
+                elif re.search(r'End time', line):
+                    m = re.match(r'^[>\s]*End time\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\w+)', line)
+                    if m:
+                        endmjd = _qa.totime(m[1] + '/' + m[2])
+                # date increment
+                elif re.search(r'Step-size', line):
+                    m = re.match(r'^[>\s]*Step-size\s+\S+\s+(\S+)\s+(\w+)', line)
+                    if m:
+                        unit = m[2]
+                        if unit == 'minutes':
+                            # this is the default unit returned by the JPL-Horizons
+                            theunit = 'min'
+                        elif unit == 'hours':
+                            theunit = 'h'
+                        elif unit == 'days':
+                            theunit = 'd'
                         else:
-                            (_, _, _, hr, mn, s, _) = m[0].split(' ', 6)
-            # rotational period for asteroids
-            elif re.search(r'ROTPER', line):
-                m = re.search(r'ROTPER=\s*([0-9.]+)\s*', line)
-                if m:
-                    headerdict['rot_per'] = {'unit': 'h', 'value': float(m[1])}
-            elif re.search(r'orbit period|orb per|orb. per.|orbital period', line.lower()) \
-                    and not foundorbper:
-                print("Found orbital period!!!")
-                m = re.search(r'Orbital period\s*[=~]\s*([-0-9.]+)\s*(\w+)\s*|'
-                              'orb. per., (\w)\s+=\s+([0-9.]+)\s+|'
-                              'orb per\s+=\s+([0-9.]+)\s+(\w+)\s+|'
-                              'orbit period\s+=\s+([0-9.]+)\s+(\w+)\s+', line)
-                if m:
-                    print('Found orb per ===r', m[0])
-                    print('m.groups ', m.groups())
-                    if m[0].find('Orbital period') != -1:
-                        headerdict['orb_per'] = {'unit': m[2], 'value': float(m[1])}
-                    elif m[0].find('orb. per.') != -1:
-                        headerdict['orb_per'] = {'unit': m[3], 'value': float(m[4])}
-                    elif m[0].find('orb per') != -1:
-                        headerdict['orb_per'] = {'unit': m[6], 'value': float(m[5])}
-                    elif m[0].find('orbit period') != -1:
-                        headerdict['orb_per'] = {'unit': m[8], 'value': float(m[7])}
-                    if 'orb_per' in headerdict:
-                        foundorbper = True
-            # start reading data
-            # elif line.find('Date') !=-1  and line.find('R.A.') and line.find('DEC'):
-            elif re.search(r'\s*Date__\(UT\)', line):
-                incolnames = line.split()
-            elif re.search(r'\$\$SOE', line):
-                readthedata = True
-            elif re.search(r'\$\$EOE', line):
-                endofdata = True
-                readthedata = False
-            elif readthedata:
-                datalines += 1
-                outfile.write(line + '\n')
-            else:
-                pass
-            lcnt += 1
-        if 'radii' in headerdict:
-            radiival = headerdict['radii']['value']
-            meanrad = _mean_radius(radiival[0], radiival[1], radiival[2])
-            headerdict['meanrad'] = {'unit': 'km', 'value': meanrad}
-        print("Total data lines=", datalines)
-        print("Total number of lines in the file==", lcnt)
-        print("headerdict=", headerdict)
-    # output to a casa table
-
-    # check the input data columns and stored the order as indices
-    foundncols = 0
-    indexoffset = 0
-    colkeys = {}
-    if incolnames is not None:
-        for outcolname in cols:
-            # all colnames in cols should have unit defined.
-            if 'unit' in cols[outcolname]:
-                colkeys[outcolname] = np.array([cols[outcolname]['unit']])
-            inheadername = cols[outcolname]['header']
-            # expect date is in the first column (date and mm:hh seperated by spaces)
-            if outcolname == 'MJD':
-                for incol in incolnames:
-                    if re.search(inheadername + '.+', incol):
-                        cols[outcolname]['index'] = incolnames.index(incol)
-                        foundncols += 1
-                        indexoffset = 1
-                if 'index' not in cols[outcolname]:
-                    print("Cannot find the Date column")
-            elif outcolname == 'RA':
-                for incol in incolnames:
-                    if re.search(inheadername + '.+(ICRF).+', incol):
-                        cols[outcolname]['index'] = incolnames.index(incol) + indexoffset
-                        foundncols += 1
-                        
-                if 'index' not in cols[outcolname]:
-                    print("Cannot find the astrometric RA and Dec column")
-            elif outcolname == 'DEC':
-                if 'index' in cols['RA']:
-                    # Dec data col is next to RA data col
-                    cols[outcolname]['index'] = cols['RA']['index'] + 1
-                    # add additional offset for index (4 data columns at this point)
-                    indexoffset +=1
-                    foundncols += 1
-            else:
-                if inheadername in incolnames:
-                    cols[outcolname]['index'] = incolnames.index(inheadername) + indexoffset
-                    foundncols += 1
+                            raise Exception('Unit of Step-size, %s is unrecognized' % unit)
+                        if theunit == 'd':
+                            dmjd = m[1]
+                        else:
+                            dmjd = _qa.convert(_qa.totime(m[1] + theunit), 'd')
+                        headerdict['dMJD'] = dmjd['value']
+                        if startmjd is not None:  # start mjd should be available before step-size line
+                            # MJD0 = firstMJD - dMJD (as defined casacore MeasComet documentation)
+                            headerdict['MJD0'] = startmjd['value'] - dmjd['value']
+                elif re.search(r'Center geodetic', line):
+                    m = re.match(r'^[>\s]*Center geodetic\s*: ([-+0-9.]+,\s*[-+0-9.]+,\s*[-+0-9.]+)', line)
+                    if m:
+                        long_lat_alt = m[1].split(',')
+                        headerdict['GeoLong'] = float(long_lat_alt[0])
+                        headerdict['GeoLat'] = float(long_lat_alt[1])
+                        headerdict['GeoDist'] = float(long_lat_alt[2])
+                        # obs location
+                elif re.search(r'Center-site name', line):
+                    m = re.match(r'^[>\s]*Center-site name:\s+(\w+)', line)
+                    if m:
+                        headerdict['obsloc'] = m[1]
+                        headerdict['posrefsys'] = 'ICRF/J2000.0'  # fixed
+                # target radii
+                elif re.search(r'Target radii', line):
+                    m = re.match(r'^[>\s]*Target radii\s*:\s*([0-9.]+\s*x\s*[0-9.]+\s*x\s*[0-9.]+)\s*km.*', line)
+                    if m:
+                        radiiarr = np.asarray(np.array(m[1].split(' x ')), dtype=np.float64)
+                        headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
+                        # rotational period (few pattens seem to exist)
+                elif re.search(r'rot. period|Rotational period', line):
+                    m = re.search(r'rot. period\s+\w*=\s+([0-9.]+)\s+(\w+)|'
+                                  'rot. period\s+\S+=\s+[0-9.]+h\s[0-9.]+m\s[0-9.]+\ss|'
+                                  'Rotational period\s*=\s+Synchronous', line)
+                    if m:
+                        if m[0].find('Synchronous') != -1:
+                            headerdict['rot_per'] = 'Synchronous'
+                        else:
+                            if len(m.groups()) > 1:
+                                headerdict['rot_per'] = {'unit': m[2], 'value': m[1]}
+                            else:
+                                (_, _, _, hr, mn, s, _) = m[0].split(' ', 6)
+                # rotational period for asteroids
+                elif re.search(r'ROTPER', line):
+                    m = re.search(r'ROTPER=\s*([0-9.]+)\s*', line)
+                    if m:
+                        headerdict['rot_per'] = {'unit': 'h', 'value': float(m[1])}
+                elif re.search(r'orbit period|orb per|orb. per.|orbital period', line.lower()) \
+                        and not foundorbper:
+                    print("Found orbital period!!!")
+                    m = re.search(r'Orbital period\s*[=~]\s*([-0-9.]+)\s*(\w+)\s*|'
+                                  'orb. per., (\w)\s+=\s+([0-9.]+)\s+|'
+                                  'orb per\s+=\s+([0-9.]+)\s+(\w+)\s+|'
+                                  'orbit period\s+=\s+([0-9.]+)\s+(\w+)\s+', line)
+                    if m:
+                        print('Found orb per ===r', m[0])
+                        print('m.groups ', m.groups())
+                        if m[0].find('Orbital period') != -1:
+                            headerdict['orb_per'] = {'unit': m[2], 'value': float(m[1])}
+                        elif m[0].find('orb. per.') != -1:
+                            headerdict['orb_per'] = {'unit': m[3], 'value': float(m[4])}
+                        elif m[0].find('orb per') != -1:
+                            headerdict['orb_per'] = {'unit': m[6], 'value': float(m[5])}
+                        elif m[0].find('orbit period') != -1:
+                            headerdict['orb_per'] = {'unit': m[8], 'value': float(m[7])}
+                        if 'orb_per' in headerdict:
+                            foundorbper = True
+                # start reading data
+                # elif line.find('Date') !=-1  and line.find('R.A.') and line.find('DEC'):
+                elif re.search(r'\s*Date__\(UT\)', line):
+                    incolnames = line.split()
+                elif re.search(r'\$\$SOE', line):
+                    readthedata = True
+                elif re.search(r'\$\$EOE', line):
+                    endofdata = True
+                    readthedata = False
+                elif readthedata:
+                    datalines += 1
+                    outfile.write(line + '\n')
                 else:
-                    print("Cannot find ", inheadername)
+                    pass
+                lcnt += 1
+            if 'radii' in headerdict:
+                radiival = headerdict['radii']['value']
+                meanrad = _mean_radius(radiival[0], radiival[1], radiival[2])
+                headerdict['meanrad'] = {'unit': 'km', 'value': meanrad}
+            print("Total data lines=", datalines)
+            print("Total number of lines in the file==", lcnt)
+            print("headerdict=", headerdict)
+        # output to a casa table
 
-        print(cols)
-        print("expected n cols = ", len(cols))
-        print("foundncols=", foundncols)
-        if foundncols == len(cols):
-            # Format the data to comply with measure/setjy
-            print("Found all the required columns")
-            with open(tempconvfname, 'w') as outf, open(tempfname, 'r') as inf:
-                ndata = 0
-                earliestmjd = None
-                mjd = None
-                for line in inf:
-                    outline = ''
-                    sep = ' '
-                    rawtempdata = line.split()
-                    tempdata = ['-999.0' if x == 'n.a.' else x for x in rawtempdata]
-                    # construct mjd from col 1 (calendar date) + col 2 (time)
-                    caldatestr = tempdata[0] + ' ' + tempdata[1]
-                    mjd = _qa.totime(caldatestr)
-                    outline += str(mjd['value']) + sep
-                    # position
-                    rad = tempdata[cols['RA']['index']]
-                    decd = tempdata[cols['DEC']['index']]
-                    outline += rad + sep + decd + sep
-                    # geocentric dist. (Rho)
-                    delta = tempdata[cols['Rho']['index']]
-                    outline += delta + sep
-                    # geocentric range rate (RadVel)
-                    valinkmps = tempdata[cols['RadVel']['index']]
-                    deldot = _qa.convert(_qa.quantity(valinkmps+'km/s'), 'AU/d' )['value']
-                    #print("valinkms={}, delot={}".format(valinkmps, deldot))
-                    outline += str(deldot) + sep
-                    # NP_ang & NP_dist
-                    npang = tempdata[cols['NP_ang']['index']]
-                    npdist = tempdata[cols['NP_dist']['index']]
-                    outline += npang + sep + npdist + sep
-                    # DiskLong & DiskLat
-                    disklong = tempdata[cols['DiskLong']['index']]
-                    disklat = tempdata[cols['DiskLat']['index']]
-                    outline += disklong + sep + disklat + sep
-                    # sub-long & sub-lat 
-                    sllon = tempdata[cols['Sl_lon']['index']]
-                    sllat = tempdata[cols['Sl_lat']['index']]
-                    outline += sllon + sep + sllat + sep
-                    # r, rot
-                    r = tempdata[cols['r']['index']]
-                    rdot = tempdata[cols['rdot']['index']]
-                    outline += r + sep + rdot + sep
-                    # S-T-O 
-                    phang = tempdata[cols['phang']['index']]
-                    outline += phang
-                    outf.write(outline + '\n')
+        # check the input data columns and stored the order as indices
+        foundncols = 0
+        indexoffset = 0
+        colkeys = {}
+        if incolnames is not None:
+            for outcolname in cols:
+                # all colnames in cols should have unit defined.
+                if 'unit' in cols[outcolname]:
+                    colkeys[outcolname] = np.array([cols[outcolname]['unit']])
+                inheadername = cols[outcolname]['header']
+                # expect date is in the first column (date and mm:hh seperated by spaces)
+                if outcolname == 'MJD':
+                    for incol in incolnames:
+                        if re.search(inheadername + '.+', incol):
+                            cols[outcolname]['index'] = incolnames.index(incol)
+                            foundncols += 1
+                            indexoffset = 1
+                    if 'index' not in cols[outcolname]:
+                        print("Cannot find the Date column")
+                elif outcolname == 'RA':
+                    for incol in incolnames:
+                        if re.search(inheadername + '.+(ICRF).+', incol):
+                            cols[outcolname]['index'] = incolnames.index(incol) + indexoffset
+                            foundncols += 1
 
-                    ndata += 1
-                    if ndata == 1:
-                        earliestmjd = mjd
-                # record first and last mjd in the data  
-                headerdict['earliest'] = _me.epoch('UTC',earliestmjd)
-                headerdict['latest'] = _me.epoch('UTC', mjd)
+                    if 'index' not in cols[outcolname]:
+                        print("Cannot find the astrometric RA and Dec column")
+                elif outcolname == 'DEC':
+                    if 'index' in cols['RA']:
+                        # Dec data col is next to RA data col
+                        cols[outcolname]['index'] = cols['RA']['index'] + 1
+                        # add additional offset for index (4 data columns at this point)
+                        indexoffset +=1
+                        foundncols += 1
+                else:
+                    if inheadername in incolnames:
+                        cols[outcolname]['index'] = incolnames.index(inheadername) + indexoffset
+                        foundncols += 1
+                    else:
+                        print("Cannot find ", inheadername)
 
-        else:
-            print("Missing ", len(cols) - foundncols)
+            print(cols)
+            print("expected n cols = ", len(cols))
+            print("foundncols=", foundncols)
+            if foundncols == len(cols):
+                # Format the data to comply with measure/setjy
+                print("Found all the required columns")
+                with open(tempconvfname, 'w') as outf, open(tempfname, 'r') as inf:
+                    ndata = 0
+                    earliestmjd = None
+                    mjd = None
+                    for line in inf:
+                        outline = ''
+                        sep = ' '
+                        rawtempdata = line.split()
+                        tempdata = ['-999.0' if x == 'n.a.' else x for x in rawtempdata]
+                        # construct mjd from col 1 (calendar date) + col 2 (time)
+                        caldatestr = tempdata[0] + ' ' + tempdata[1]
+                        mjd = _qa.totime(caldatestr)
+                        outline += str(mjd['value']) + sep
+                        # position
+                        rad = tempdata[cols['RA']['index']]
+                        decd = tempdata[cols['DEC']['index']]
+                        outline += rad + sep + decd + sep
+                        # geocentric dist. (Rho)
+                        delta = tempdata[cols['Rho']['index']]
+                        outline += delta + sep
+                        # geocentric range rate (RadVel)
+                        valinkmps = tempdata[cols['RadVel']['index']]
+                        deldot = _qa.convert(_qa.quantity(valinkmps+'km/s'), 'AU/d' )['value']
+                        #print("valinkms={}, delot={}".format(valinkmps, deldot))
+                        outline += str(deldot) + sep
+                        # NP_ang & NP_dist
+                        npang = tempdata[cols['NP_ang']['index']]
+                        npdist = tempdata[cols['NP_dist']['index']]
+                        outline += npang + sep + npdist + sep
+                        # DiskLong & DiskLat
+                        disklong = tempdata[cols['DiskLong']['index']]
+                        disklat = tempdata[cols['DiskLat']['index']]
+                        outline += disklong + sep + disklat + sep
+                        # sub-long & sub-lat
+                        sllon = tempdata[cols['Sl_lon']['index']]
+                        sllat = tempdata[cols['Sl_lat']['index']]
+                        outline += sllon + sep + sllat + sep
+                        # r, rot
+                        r = tempdata[cols['r']['index']]
+                        rdot = tempdata[cols['rdot']['index']]
+                        outline += r + sep + rdot + sep
+                        # S-T-O
+                        phang = tempdata[cols['phang']['index']]
+                        outline += phang
+                        outf.write(outline + '\n')
 
-        # final step: convert to a CASA table
-        dtypes = np.array(['D' for _ in range(len(cols))])
-        _tb.fromascii(outtable, tempconvfname, sep=' ', columnnames=list(cols.keys()),
-                      datatypes=dtypes.tolist())
+                        ndata += 1
+                        if ndata == 1:
+                            earliestmjd = mjd
+                    # record first and last mjd in the data
+                    headerdict['earliest'] = _me.epoch('UTC',earliestmjd)
+                    headerdict['latest'] = _me.epoch('UTC', mjd)
 
-        # fill keyword values in the ephem table
-        if os.path.exists(outtable):
-            _fill_keywords_from_dict(headerdict, colkeys, outtable)
-            print("Output is written to a CASA table, {}".format(outtable))
-        else:
-            raise Exception("Error occured. The output table, " + outtable + "is not generated")
+            else:
+                print("Missing ", len(cols) - foundncols)
 
+            # final step: convert to a CASA table
+            dtypes = np.array(['D' for _ in range(len(cols))])
+            _tb.fromascii(outtable, tempconvfname, sep=' ', columnnames=list(cols.keys()),
+                          datatypes=dtypes.tolist())
+
+            # fill keyword values in the ephem table
+            if os.path.exists(outtable):
+                _fill_keywords_from_dict(headerdict, colkeys, outtable)
+                print("Output is written to a CASA table, {}".format(outtable))
+            else:
+                raise Exception("Error occured. The output table, " + outtable + "is not generated")
+    except RuntimeError as e:
+        raise Exception("Error occurred")
+    finally:
         tempfiles = [tempfname, tempconvfname]
         _clean_up(tempfiles)
 
@@ -584,7 +593,7 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
                 keydict['meanrad']['value'] = calc_meanrad
         if 'rot_per' in keydict and 'orb_per' in keydict and keydict['rot_per'] == 'Synchronous':
             keydict['rot_per'] = keydict['orb_per']
-        sortedkeydict = {k: keydict[k] for k in orderedmainkeys}
+        sortedkeydict = {k: keydict[k] for k in orderedmainkeys if k in keydict}
         print('sorteddict=',sortedkeydict)
         for k in sortedkeydict:
             _tb.putkeyword(k, sortedkeydict[k])

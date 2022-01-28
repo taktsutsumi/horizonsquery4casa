@@ -1,6 +1,6 @@
 import numpy as np
 from casatools import table
-objectname='Callisto'
+objectname='Ceres'
 mjdstr='59214-62866dUTC'
 #ephemdir='/home/casa/data/trunk/ephemerides/JPL-Horizons/'
 ephemdir='/Users/ttsutsum/SWDevel/casa-data/ephemerides/JPL-Horizons/'
@@ -69,11 +69,14 @@ for dcol in datacolnames:
     data = tb.getcol(dcol)
     refdata = tb2.getcol(dcol)
     if np.array_equal(data,refdata): 
-        print("{} matches".format(dcol))
+        print("{} matches exactly".format(dcol))
+    elif np.allclose(data,refdata):
+        print("{} matches within a tolerance".format(dcol))
     else:
         print("{} mismatch".format(dcol))
+        print("shape: this = {}, ref = {}".format(data.shape, refdata.shape))
         print("this =", data)
         print("ref =", refdata)
-
+        print("max diff(abs(data-refdata) =", max(abs(data-refdata)))
 tb.done()
 tb2.done()

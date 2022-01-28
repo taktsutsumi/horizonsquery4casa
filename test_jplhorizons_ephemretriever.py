@@ -23,7 +23,7 @@ objlist = ['Juno',
            'Uranus',
            'Venus',
            'Vesta']
-objlist = ['Callisto']
+objlist = ['Ceres']
 #objn = 'MARS'
 custom_step_list={'Io':'6h',
                   'Moon':'1h'}
