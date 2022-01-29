@@ -6,15 +6,15 @@ import jplhorizons_query
 
 #objlist = ['Callisto',
 #           'Ceres',
-#           'Europa',
+#          'Europa',
 #           'Ganymede',
-#          'Io',
-objlist = ['Juno',
-           'Jupiter',
-           'Lutetia',
-           'Mercury',
+#           'Io',
+#objlist = ['Juno',
+#           'Jupiter',
+#           'Lutetia',
+#           'Mercury',
 #           'Moon',
-           'Neptune',
+objlist = ['Neptune',
            'Pallas',
            'Pluto',
            'Saturn',
@@ -23,16 +23,16 @@ objlist = ['Juno',
            'Uranus',
            'Venus',
            'Vesta']
-objlist = ['Ceres']
-#objn = 'MARS'
-custom_step_list={'Io':'6h',
-                  'Moon':'1h'}
+objlist = ['Jupiter']
+custom_step_list={'Moon':'1h'}
 _qa = quanta()
 # starttime='2010/01/01'
 # mjd 59214
 starttime = '2020/12/31'
 stoptime = '2030/12/31'
-step = '1d'
+# for moon
+#stoptime = '2030/12/31/23:00'
+instep = '1d'
 
 startmjd = int(_qa.totime(starttime)['value'])
 endmjd = int(_qa.totime(stoptime)['value'])
@@ -41,5 +41,7 @@ for obj in objlist:
     print("obj = ", obj)
     if obj in custom_step_list:
         step = custom_step_list[obj]
+    else:
+        step = instep
     outtable = obj.capitalize()+'_'+str(startmjd)+'-'+str(endmjd)+'dUTC_new.tab'
     jplhorizons_query.getjplephem(obj, starttime, stoptime, step, outtable, savetofile=True)

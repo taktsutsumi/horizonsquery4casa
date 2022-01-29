@@ -1,6 +1,6 @@
 import numpy as np
 from casatools import table
-objectname='Ceres'
+objectname='Saturn'
 mjdstr='59214-62866dUTC'
 #ephemdir='/home/casa/data/trunk/ephemerides/JPL-Horizons/'
 ephemdir='/Users/ttsutsum/SWDevel/casa-data/ephemerides/JPL-Horizons/'
@@ -39,13 +39,19 @@ else:
                     if type(tbkeys[ky]['value'])==np.ndarray:
                         if not np.array_equal(tbkeys[ky]['value'], reftbkeys[ky]['value']):
                             print("keyword: {}, this tb:{}, ref:{}".format(ky, tbkeys[ky], reftbkeys[ky]))
+                    else:
+                        if tbkeys[ky]['value'] != reftbkeys[ky]['value']:
+                            print("keyword: {}, this tb:{}, ref:{}".format(ky, \
+                                                                           tbkeys[ky]['value'], reftbkeys[ky]['value']))
             elif tbkeys[ky] != reftbkeys[ky]:
                 print("keyword: {}, this tb:{}, ref:{}".format(ky, tbkeys[ky], reftbkeys[ky]))
             else:
                 pass
         else:
             print("keyword= {} is missing in ref tb".format(ky))
-
+    missingkeys = [k for k in reftbkeys if not k in tbkeys]
+    if missingkeys != []:
+        print("keywords in ref missing in  this: ", missingkeys)
 # check col keywords(units)           
 if dcolkeys == refcolkeys:
     print("data col keywords are identical")
@@ -68,6 +74,7 @@ tb2.open(reftab)
 for dcol in datacolnames:
     data = tb.getcol(dcol)
     refdata = tb2.getcol(dcol)
+    print("----------\n")
     if np.array_equal(data,refdata): 
         print("{} matches exactly".format(dcol))
     elif np.allclose(data,refdata):
@@ -77,6 +84,9 @@ for dcol in datacolnames:
         print("shape: this = {}, ref = {}".format(data.shape, refdata.shape))
         print("this =", data)
         print("ref =", refdata)
-        print("max diff(abs(data-refdata) =", max(abs(data-refdata)))
+        diffabs = abs(data-refdata)
+        diffmaxindex = np.argmax(diffabs)
+        diffmax = diffabs[diffmaxindex]
+        print("max diff(abs(data-refdata)={}, frac. diff={}".format(diffmax, abs(diffmax/refdata[diffmaxindex])))
 tb.done()
 tb2.done()

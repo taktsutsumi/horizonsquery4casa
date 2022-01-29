@@ -126,7 +126,7 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
     req = Request(urlbase, params)
     datastr = None
     try:
-        with urlopen(req, context=context, timeout=10) as response:
+        with urlopen(req, context=context, timeout=60) as response:
             datastr = response.read().decode()
     except URLError as e:
         if hasattr(e, 'reason'):
@@ -331,17 +331,24 @@ def tocasatb(indata, outtable):
                         headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
                         # rotational period (few pattens seem to exist)
                 elif re.search(r'rot. period|Rotational period', line):
-                    m = re.search(r'rot. period\s+\w*=\s+([0-9.]+)\s+(\w+)|'
-                                  'rot. period\s+\S+=\s+[0-9.]+h\s[0-9.]+m\s[0-9.]+\ss|'
+                    print("Found rot. period!! ",line)
+                    m = re.search(r'rot. period\s+\S*=\s*([0-9.]+)(?:\s*\+-[0-9.]+)?\s*(\w+)|'
+                                  'rot. period\s+\S+=\s+([0-9.]+h\s*[0-9.]+m\s*[0-9.]+\ss)|'
                                   'Rotational period\s*=\s+Synchronous', line)
                     if m:
                         if m[0].find('Synchronous') != -1:
                             headerdict['rot_per'] = 'Synchronous'
                         else:
+                            print("Found rot. period m.groups()=",m.groups())
+                            print("len(m.groups)=",len(m.groups()))
+
                             if len(m.groups()) > 1:
-                                headerdict['rot_per'] = {'unit': m[2], 'value': m[1]}
-                            else:
-                                (_, _, _, hr, mn, s, _) = m[0].split(' ', 6)
+                                if m[1]:
+                                    headerdict['rot_per'] = {'unit': m[2], 'value': float(m[1])}
+                                else:
+                                    # e.g. Jupiter's case
+                                    (hr, mn, s, _) = m[3].split(' ', 4)
+                                    headerdict['rot_per']= _qa.convert(_qa.time(hr+mn+s)[0],'h')
                 # rotational period for asteroids
                 elif re.search(r'ROTPER', line):
                     m = re.search(r'ROTPER=\s*([0-9.]+)\s*', line)
@@ -349,14 +356,14 @@ def tocasatb(indata, outtable):
                         headerdict['rot_per'] = {'unit': 'h', 'value': float(m[1])}
                 elif re.search(r'orbit period|orb per|orb. per.|orbital period', line.lower()) \
                         and not foundorbper:
-                    print("Found orbital period!!!")
+                    #print("Found orbital period!!!")
                     m = re.search(r'Orbital period\s*[=~]\s*([-0-9.]+)\s*(\w+)\s*|'
                                   'orb. per., (\w)\s+=\s+([0-9.]+)\s+|'
                                   'orb per\s+=\s+([0-9.]+)\s+(\w+)\s+|'
                                   'orbit period\s+=\s+([0-9.]+)\s+(\w+)\s+', line)
                     if m:
-                        print('Found orb per ===r', m[0])
-                        print('m.groups ', m.groups())
+                        #print('Found orb per ===r', m[0])
+                        #print('m.groups ', m.groups())
                         if m[0].find('Orbital period') != -1:
                             headerdict['orb_per'] = {'unit': m[2], 'value': float(m[1])}
                         elif m[0].find('orb. per.') != -1:
@@ -367,6 +374,10 @@ def tocasatb(indata, outtable):
                             headerdict['orb_per'] = {'unit': m[8], 'value': float(m[7])}
                         if 'orb_per' in headerdict:
                             foundorbper = True
+                elif re.search(r'Mean [Tt]emperature', line):
+                    m = re.search(r'Mean [Tt]emperature\s+\(K\)\s+=\s+([0-9.]+)\s+',line)
+                    if m:
+                        headerdict['T_mean'] = {'unit':'K', 'value':float(m[1])}
                 # start reading data
                 # elif line.find('Date') !=-1  and line.find('R.A.') and line.find('DEC'):
                 elif re.search(r'\s*Date__\(UT\)', line):
@@ -581,8 +592,8 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
     # call mod version of mean_radius_with_known_theta
     orderedmainkeys = ['VS_CREATE','VS_DATE','VS_TYPE','VS_VERSION','NAME',\
                        'MJD0','dMJD','GeoDist','GeoLat','GeoLong','obsloc',\
-                       'earliest','latest','radii',\
-                       'meanrad','orb_per','rot_per']
+                       'posrefsys','earliest','latest','radii',\
+                       'meanrad','orb_per','rot_per','T_mean']
     try:
         _tb.open(tablename, nomodify=False)
         disklat = _tb.getcol('DiskLat')
