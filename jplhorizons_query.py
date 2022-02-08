@@ -328,12 +328,23 @@ def tocasatb(indata, outtable):
                     m = re.match(r'^[>\s]*Center-site name:\s+(\w+)', line)
                     if m:
                         headerdict['obsloc'] = m[1]
+                        headerdict['posrefsys'] =  'ICRF/J2000.0'
                 elif re.search(r'Target radii', line):
-                    m = re.match(r'^[>\s]*Target radii\s*:\s*([0-9.]+\s*x\s*[0-9.]+\s*x\s*[0-9.]+)\s*km.*', line)
+                    m = re.match(r'^[>\s]*Target radii\s*:\s*([0-9.]+\s*x\s*[0-9.]+\s*x\s*[0-9.]+)\s*km.*|'
+                                 '^[>/s]*Target radii\s*:\s*([0-9.]+)\s*km', line)
                     if m:
-                        radiiarr = np.asarray(np.array(m[1].split(' x ')), dtype=np.float64)
-                        headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
-                        # rotational period (few pattens seem :wqto exist)
+                        matchlist = m.groups()
+                        radiiarr = np.zeros(3)
+                        if len(matchlist)==2:
+                            if m[2]==None:
+                                radiiarr = np.asarray(np.array(m[1].split(' x ')), dtype=np.float64)
+                                headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
+                            elif m[1]==None:
+                                radiiarr = np.array([m[2],m[2],m[2]], dtype=np.float64)
+                            headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
+                        else:
+                            print("Unexpected number or matches for Target radii:{} (expected 2)".format(m.groups))
+                #rotational period (few pattens seem to exist)
                 elif re.search(r'rot. period|Rotational period', line):
                     print("Found rot. period!! ",line)
                  #   m = re.search(r'rot. period\s+\S*=\s*([0-9.]+)(?:\s*\+-[0-9.]+)?\s*(\w+)|'
@@ -346,16 +357,17 @@ def tocasatb(indata, outtable):
                         if m[0].find('Synchronous') != -1:
                             headerdict['rot_per'] = 'Synchronous'
                         else:
-                            print("m[0]=",m[0])
-                            print("Found rot. period m.groups()=",m.groups())
-                            print("len(m.groups)=",len(m.groups()))
-
                             if len(m.groups()) == 3:
                                 if m[1]==None:
                                     headerdict['rot_per'] = _qa.quantity(m[2] + m[3])
                                 elif m[2]==None and m[3]==None:
                                     #subm = re.search(r'([0-9]+)h\s*([0-9]+)m\s*([0-9.]+)\s*s',m[1])
                                     headerdict['rot_per'] = _qa.convert(re.sub(r'\s+','',m[1]),'h')
+                # another variation of rotational period entry
+                elif re.search(r'rot.\s+per.', line):
+                    m = re.search(r'rot.\s+per.\s*=\s*([0-9.]+)\s*([dh])',line)
+                    if m:
+                        headerdict['rot_per'] = _qa.quantity(m[1]+m[2])
                 # rotational period for asteroids
                 elif re.search(r'ROTPER', line):
                     m = re.search(r'ROTPER=\s*([0-9.]+)\s*', line)
@@ -612,10 +624,9 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
         if 'rot_per' in keydict and 'orb_per' in keydict and keydict['rot_per'] == 'Synchronous':
             keydict['rot_per'] = keydict['orb_per']
         sortedkeydict = {k: keydict[k] for k in orderedmainkeys if k in keydict}
-        print('sorteddict=',sortedkeydict)
+        #print('sorteddict=',sortedkeydict)
         for k in sortedkeydict:
             _tb.putkeyword(k, sortedkeydict[k])
-        #_tb.putkeywords(sortedkeydict)
         datacolnames = _tb.colnames()
         for col in datacolnames:
             if col in colkeys:

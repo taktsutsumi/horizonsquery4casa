@@ -23,10 +23,15 @@ objlist = ['Neptune',
            'Uranus',
            'Venus',
            'Vesta']
-objlist = ['Pallas']
+objlist = ['Neptune']
 custom_step_list={'Moon':'1h'}
 _qa = quanta()
-# starttime='2010/01/01'
+# for testing pluto
+#starttime='2010/01/01'
+#stoptime='2020/12/31'
+# for Sun
+#starttime='2020/01/01'
+#
 # mjd 59214
 starttime = '2020/12/31'
 stoptime = '2030/12/31'
