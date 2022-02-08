@@ -75,10 +75,9 @@ def getjplephem(objectname, starttime, stoptime, incr, outtable, asis=False, sav
 
     ephemdata = queryhorizons(target, start_time, stop_time, step_size, quantities, ang_format, savetofile)
     # return ephemdata
-    if 'result' in ephemdata:
+    if ephemdata and 'result' in ephemdata:
         print('converting ephemeris data to a CASA table')
         tocasatb(ephemdata, outtable)
-
 
 def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format, savetofile=False):
     """
@@ -126,7 +125,7 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
     req = Request(urlbase, params)
     datastr = None
     try:
-        with urlopen(req, context=context, timeout=60) as response:
+        with urlopen(req, context=context, timeout=10) as response:
             datastr = response.read().decode()
     except URLError as e:
         if hasattr(e, 'reason'):
@@ -140,25 +139,27 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
         casalog.post(msg, 'WARN')
 
     status = response.getcode()
-    try:
-        data = ast.literal_eval(datastr)
-    except RuntimeError as e:
-        casalog.post(e, 'SEVERE')
-    if status == 200:
-        #
-        # If the ephemeris data file was generated, write it to the output file:
-        if savetofile:
-            if os.path.exists(ephem_filename):
-                os.remove(ephem_filename)
-            if "result" in data:
-                with open(ephem_filename, "w") as f:
-                    f.write(data["result"])
-            # Otherwise, the ephemeris file was not generated so output an error
-            else:
-                casalog.post("ERROR: No data found. Ephemeris data file not generated", 'WARN')
+    if datastr:
+        try:
+            data = ast.literal_eval(datastr)
+        except RuntimeError as e:
+            casalog.post(e, 'SEVERE')
+        if status == 200:
+           #
+           # If the ephemeris data file was generated, write it to the output file:
+            if savetofile:
+                if os.path.exists(ephem_filename):
+                    os.remove(ephem_filename)
+                if "result" in data:
+                    with open(ephem_filename, "w") as f:
+                        f.write(data["result"])
+                # Otherwise, the ephemeris file was not generated so output an error
+                else:
+                    casalog.post("ERROR: No data found. Ephemeris data file not generated", 'WARN')
+        else:
+            raise Exception('Could not retrieve the data. Error code:{}:{}'.format(status, response.msg))
     else:
-        raise Exception('Could not retrieve the data. Error code:{}:{}'.format(status, response.msg))
-
+        data = None
     return data
 
 
@@ -257,14 +258,19 @@ def tocasatb(indata, outtable):
                     # jplhorizondataIdFound = True
                     print("Looks like JPL-Horizons data")
                 elif re.search(r'^\s*Ephemeris\s+', line):  # date the data file was retrieved and  created
-                    (_, _, _, wday, mon, day, tm, year, _) = line.split(" ", 8)
+                    #m = re.search(r'(API_USER\S+\s+(\S+)\s+([0-9]+)\s+(\S+)\s+(\S+)')
+                    (_, _, _, wday, mon, day, tm, year, _) = re.split(' +', line, 8)
+                    #print('date for vs_create=', line.split(" ",9))
+                    # date info in 3-7th items
+
                     try:
                         tst=float(mon)
                         nmon = mon
                     except:
                         tonummon=time.strptime(mon,"%b")
                         nmon = f"{tonummon.tm_mon:02d}"
-                    headerdict['VS_CREATE'] = year + '/' + nmon + '/' + day + '/' + tm[0:5]
+                        day2 = f"{int(day):02d}"
+                    headerdict['VS_CREATE'] = year + '/' + nmon + '/' + day2 + '/' + tm[0:5]
                     # VS_DATE - use the current time to indicate the time CASA table is created
                     #print(time.strftime('%Y/%m/%d/%H:%M', time.gmtime())
                     headerdict['VS_DATE'] = time.strftime('%Y/%m/%d/%H:%M',time.gmtime() )
@@ -322,33 +328,34 @@ def tocasatb(indata, outtable):
                     m = re.match(r'^[>\s]*Center-site name:\s+(\w+)', line)
                     if m:
                         headerdict['obsloc'] = m[1]
-                        headerdict['posrefsys'] = 'ICRF/J2000.0'  # fixed
-                # target radii
                 elif re.search(r'Target radii', line):
                     m = re.match(r'^[>\s]*Target radii\s*:\s*([0-9.]+\s*x\s*[0-9.]+\s*x\s*[0-9.]+)\s*km.*', line)
                     if m:
                         radiiarr = np.asarray(np.array(m[1].split(' x ')), dtype=np.float64)
                         headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
-                        # rotational period (few pattens seem to exist)
+                        # rotational period (few pattens seem :wqto exist)
                 elif re.search(r'rot. period|Rotational period', line):
                     print("Found rot. period!! ",line)
-                    m = re.search(r'rot. period\s+\S*=\s*([0-9.]+)(?:\s*\+-[0-9.]+)?\s*(\w+)|'
-                                  'rot. period\s+\S+=\s+([0-9.]+h\s*[0-9.]+m\s*[0-9.]+\ss)|'
-                                  'Rotational period\s*=\s+Synchronous', line)
+                 #   m = re.search(r'rot. period\s+\S*=\s*([0-9.]+)(?:\s*\+-[0-9.]+)?\s*(\w+)|'
+                 #   m = re.search(r'rot. period\s+\S*=\s*([0-9.]+h\s*[0-9.]+m\s*[0-9.]+\s*s|'
+                  #                '([0-9.]+)(?:\s*\+-[0-9.]+)?\s*([dh]))|'
+                    m = re.search(r'rot. period\s+\S*=\s*([0-9.]+h\s*[0-9.]+m\s*[0-9.]+\s*s)|'
+                                    'rot. period\s+\S*=\s*([0-9.]+)(?:\s*\+-[0-9.]+)?\s*([dh])|'
+                    'Rotational period\s*=\s+Synchronous', line)
                     if m:
                         if m[0].find('Synchronous') != -1:
                             headerdict['rot_per'] = 'Synchronous'
                         else:
+                            print("m[0]=",m[0])
                             print("Found rot. period m.groups()=",m.groups())
                             print("len(m.groups)=",len(m.groups()))
 
-                            if len(m.groups()) > 1:
-                                if m[1]:
-                                    headerdict['rot_per'] = {'unit': m[2], 'value': float(m[1])}
-                                else:
-                                    # e.g. Jupiter's case
-                                    (hr, mn, s, _) = m[3].split(' ', 4)
-                                    headerdict['rot_per']= _qa.convert(_qa.time(hr+mn+s)[0],'h')
+                            if len(m.groups()) == 3:
+                                if m[1]==None:
+                                    headerdict['rot_per'] = _qa.quantity(m[2] + m[3])
+                                elif m[2]==None and m[3]==None:
+                                    #subm = re.search(r'([0-9]+)h\s*([0-9]+)m\s*([0-9.]+)\s*s',m[1])
+                                    headerdict['rot_per'] = _qa.convert(re.sub(r'\s+','',m[1]),'h')
                 # rotational period for asteroids
                 elif re.search(r'ROTPER', line):
                     m = re.search(r'ROTPER=\s*([0-9.]+)\s*', line)

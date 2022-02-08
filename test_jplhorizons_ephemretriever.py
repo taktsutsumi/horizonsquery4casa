@@ -23,7 +23,7 @@ objlist = ['Neptune',
            'Uranus',
            'Venus',
            'Vesta']
-objlist = ['Jupiter']
+objlist = ['Pallas']
 custom_step_list={'Moon':'1h'}
 _qa = quanta()
 # starttime='2010/01/01'
