@@ -23,7 +23,7 @@ objlist = ['Neptune',
            'Uranus',
            'Venus',
            'Vesta']
-objlist = ['Neptune']
+objlist = ['Moon']
 custom_step_list={'Moon':'1h'}
 _qa = quanta()
 # for testing pluto
@@ -36,7 +36,7 @@ _qa = quanta()
 starttime = '2020/12/31'
 stoptime = '2030/12/31'
 # for moon
-#stoptime = '2030/12/31/23:00'
+stoptime = '2030/12/31/23:00'
 instep = '1d'
 
 startmjd = int(_qa.totime(starttime)['value'])
@@ -49,4 +49,4 @@ for obj in objlist:
     else:
         step = instep
     outtable = obj.capitalize()+'_'+str(startmjd)+'-'+str(endmjd)+'dUTC_new.tab'
-    jplhorizons_query.getjplephem(obj, starttime, stoptime, step, outtable, savetofile=True)
+    jplhorizons_query.getho:w!rizonsephem(obj, starttime, stoptime, step, outtable, savetofile=True)

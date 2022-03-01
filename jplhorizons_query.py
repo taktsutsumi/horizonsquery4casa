@@ -12,7 +12,7 @@ _tb = table()
 _qa = quanta()
 _me = measures()
 
-def getjplephem(objectname, starttime, stoptime, incr, outtable, asis=False, savetofile=False):
+def gethorizonsephem(objectname, starttime, stoptime, incr, outtable, asis=False, savetofile=False):
     """
     Main driver function for ephemeris data query from JPL-Horizons
     """
@@ -120,7 +120,7 @@ def queryhorizons(target, starttime, stoptime, stepsize, quantities, ang_format,
 
     pardata = urlencode(values, doseq=True, encoding='utf-8')
     params = pardata.encode('ascii')
-    print("params=", params)
+    #print("params=", params)
 
     req = Request(urlbase, params)
     datastr = None
@@ -230,7 +230,7 @@ def tocasatb(indata, outtable):
     try:
         # Scan the original data
         if type(indata) == dict and 'result' in indata:
-            print("ephem data dict")
+            #print("ephem data dict")
             ephemdata = indata['result']
         elif type(indata) == str:
             if os.path.exists(indata):
@@ -346,7 +346,7 @@ def tocasatb(indata, outtable):
                             print("Unexpected number or matches for Target radii:{} (expected 2)".format(m.groups))
                 #rotational period (few pattens seem to exist)
                 elif re.search(r'rot. period|Rotational period', line):
-                    print("Found rot. period!! ",line)
+                    #print("Found rot. period!! ",line)
                  #   m = re.search(r'rot. period\s+\S*=\s*([0-9.]+)(?:\s*\+-[0-9.]+)?\s*(\w+)|'
                  #   m = re.search(r'rot. period\s+\S*=\s*([0-9.]+h\s*[0-9.]+m\s*[0-9.]+\s*s|'
                   #                '([0-9.]+)(?:\s*\+-[0-9.]+)?\s*([dh]))|'
@@ -417,8 +417,8 @@ def tocasatb(indata, outtable):
                 meanrad = _mean_radius(radiival[0], radiival[1], radiival[2])
                 headerdict['meanrad'] = {'unit': 'km', 'value': meanrad}
             print("Total data lines=", datalines)
-            print("Total number of lines in the file==", lcnt)
-            print("headerdict=", headerdict)
+            print("Total number of lines in the file=", lcnt)
+            #print("headerdict=", headerdict)
         # output to a casa table
 
         # check the input data columns and stored the order as indices
@@ -462,7 +462,7 @@ def tocasatb(indata, outtable):
                     else:
                         print("Cannot find ", inheadername)
 
-            print(cols)
+            #print(cols)
             print("expected n cols = ", len(cols))
             print("foundncols=", foundncols)
             if foundncols == len(cols):
@@ -631,6 +631,12 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
         for col in datacolnames:
             if col in colkeys:
                 _tb.putcolkeyword(col, 'QuantumUnits', colkeys[col])
+        # add table info required by measComet
+        maintbinfo = {'readme': 'Derivied by jplhorizons-query from JPL-Horizons API '
+                                '(https://ssd.jpl.nasa.gov/api/horizons.api)',
+                      'subType':'Comet',
+                      'type': 'IERS'}
+        _tb.putinfo(maintbinfo)
         _tb.flush()
         _tb.done()
     except RuntimeError:
@@ -643,4 +649,4 @@ def _clean_up(filelist):
     for f in filelist:
         if os.path.exists(f): 
             os.remove(f) 
-            print("Deleting ", f)
+            #print("Deleting ", f)
