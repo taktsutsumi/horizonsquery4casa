@@ -1,5 +1,6 @@
 import numpy as np
 from casatools import table
+#testddxxxx
 objectname='Neptune'
 mjdstr='59214-62866dUTC'
 #mjdstr='55197-59214dUTC'
