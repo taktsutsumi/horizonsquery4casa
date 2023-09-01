@@ -253,7 +253,7 @@ def tocasatb(indata, outtable):
             lcnt = 0
             # for lnum, line in enumerate(infile):
             for lnum, line in enumerate(ephemdata.split('\n')):
-                # JPL-Horizons data should contains this line at the beginning
+                # JPL-Horizons data should contain this line at the beginning
                 if re.search(r'JPL/HORIZONS', line):
                     # jplhorizondataIdFound = True
                     print("Looks like JPL-Horizons data")
@@ -275,8 +275,8 @@ def tocasatb(indata, outtable):
                     #print(time.strftime('%Y/%m/%d/%H:%M', time.gmtime())
                     headerdict['VS_DATE'] = time.strftime('%Y/%m/%d/%H:%M',time.gmtime() )
                     headerdict['VS_TYPE'] = 'Table of comet/planetary positions'
-                    # VERSION stored in the output table may be incremented in future
-                    # for now fixed but it is incremented from 0003 to 0004 to indiate
+                    # VERSION stored in the output table may be incremented in the future.
+                    # For now, it is fixed, but it may be incremented from 0003 to 0004 to indiate
                     # this new code is used to convert the jpl horizons data to a table.
                     headerdict['VS_VERSION'] = '0004.000'
                     # target object name
@@ -559,9 +559,9 @@ def _mean_radius(a, b, c):
     """
     # This is an approximation, but it's not bad.
     # The exact equations for going from a, b, c, and the Euler angles to the
-    # apparent ellipse are given in Drummond et al, Icarus, 1985a.
+    # apparent ellipse are given in Drummond et al., Icarus, 1985a.
     # It's the integral over the spin phase that I have approximated, so the
-    # approximation is exact for b == a, and appears to hold well for b << a.
+    # approximation is exact for b == a and appears to hold well for b << a.
     R = 0.5 * c ** 2 * (1.0 / b ** 2 + 1.0 / a ** 2)  # The magic ratio.
     if R < 0.95:
         sqrt1mR = sqrt(1.0 - R)
