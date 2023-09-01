@@ -264,12 +264,12 @@ def tocasatb(indata, outtable):
                     # date info in 3-7th items
 
                     try:
-                        tst=float(mon)
+                        float(mon)
                         nmon = mon
                     except:
                         tonummon=time.strptime(mon,"%b")
                         nmon = f"{tonummon.tm_mon:02d}"
-                        day2 = f"{int(day):02d}"
+                    day2 = f"{int(day):02d}"
                     headerdict['VS_CREATE'] = year + '/' + nmon + '/' + day2 + '/' + tm[0:5]
                     # VS_DATE - use the current time to indicate the time CASA table is created
                     #print(time.strftime('%Y/%m/%d/%H:%M', time.gmtime())
@@ -290,10 +290,10 @@ def tocasatb(indata, outtable):
                     if m:
                         startmjd = _qa.totime(m[1] + '/' + m[2])
                 # end time (of the requested time range)
-                elif re.search(r'End time', line):
-                    m = re.match(r'^[>\s]*End time\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\w+)', line)
-                    if m:
-                        endmjd = _qa.totime(m[1] + '/' + m[2])
+   #             elif re.search(r'End time', line):
+   #                 m = re.match(r'^[>\s]*End time\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\w+)', line)
+   #                 if m:
+   #                      endmjd = _qa.totime(m[1] + '/' + m[2])
                 # date increment
                 elif re.search(r'Step-size', line):
                     m = re.match(r'^[>\s]*Step-size\s+\S+\s+(\S+)\s+(\w+)', line)
@@ -336,10 +336,10 @@ def tocasatb(indata, outtable):
                         matchlist = m.groups()
                         radiiarr = np.zeros(3)
                         if len(matchlist)==2:
-                            if m[2]==None:
+                            if m[2] is None:
                                 radiiarr = np.asarray(np.array(m[1].split(' x ')), dtype=np.float64)
                                 headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
-                            elif m[1]==None:
+                            elif m[1] is None:
                                 radiiarr = np.array([m[2],m[2],m[2]], dtype=np.float64)
                             headerdict['radii'] = {'unit': 'km', 'value': radiiarr}
                         else:
@@ -358,9 +358,9 @@ def tocasatb(indata, outtable):
                             headerdict['rot_per'] = 'Synchronous'
                         else:
                             if len(m.groups()) == 3:
-                                if m[1]==None:
+                                if m[1] is None:
                                     headerdict['rot_per'] = _qa.quantity(m[2] + m[3])
-                                elif m[2]==None and m[3]==None:
+                                elif m[2] is None and m[3] is None:
                                     #subm = re.search(r'([0-9]+)h\s*([0-9]+)m\s*([0-9.]+)\s*s',m[1])
                                     headerdict['rot_per'] = _qa.convert(re.sub(r'\s+','',m[1]),'h')
                 # another variation of rotational period entry
@@ -535,7 +535,7 @@ def tocasatb(indata, outtable):
                 print("Output is written to a CASA table, {}".format(outtable))
             else:
                 raise Exception("Error occured. The output table, " + outtable + "is not generated")
-    except RuntimeError as e:
+    except RuntimeError:
         raise Exception("Error occurred")
     finally:
         tempfiles = [tempfname, tempconvfname]
@@ -609,9 +609,9 @@ def _fill_keywords_from_dict(keydict, colkeys, tablename):
     # open tb
     # get ra,dec,np_ra, np_dec, and radii in the keyword
     # call mod version of mean_radius_with_known_theta
-    orderedmainkeys = ['VS_CREATE','VS_DATE','VS_TYPE','VS_VERSION','NAME',\
-                       'MJD0','dMJD','GeoDist','GeoLat','GeoLong','obsloc',\
-                       'posrefsys','earliest','latest','radii',\
+    orderedmainkeys = ['VS_CREATE','VS_DATE','VS_TYPE','VS_VERSION','NAME',
+                       'MJD0','dMJD','GeoDist','GeoLat','GeoLong','obsloc',
+                       'posrefsys','earliest','latest','radii',
                        'meanrad','orb_per','rot_per','T_mean']
     try:
         _tb.open(tablename, nomodify=False)
